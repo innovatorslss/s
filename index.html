@@ -2,9 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>3D Runner - Session 8.1</title>
+<title>3D Runner - Session 12</title>
 <style>
-  body { margin: 0; overflow: hidden; background: #87CEEB; }
+  body { margin: 0; overflow: hidden; }
   #score {
     position: absolute;
     top: 12px;
@@ -21,38 +21,57 @@
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
-<script>
 
-/* ================= SCENE & FOG ================= */
+<script>
+/* ================= SCENE & CAMERA ================= */
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0x111111, 10, 60);
 
-/* ================= CAMERA ================= */
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 200);
 camera.position.set(0,5,10);
-camera.lookAt(0,0,0);
 
 /* ================= RENDERER ================= */
-const renderer = new THREE.WebGLRenderer({ antialias:true });
+const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
 /* ================= LIGHTS ================= */
-scene.add(new THREE.AmbientLight(0xffffff,0.6));
-const dirLight = new THREE.DirectionalLight(0xffffff,0.6);
-dirLight.position.set(5,10,5);
-scene.add(dirLight);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
 
-/* ================= ROAD ================= */
+const sunLight = new THREE.DirectionalLight(0xffffff,0.8);
+sunLight.position.set(0,20,0);
+scene.add(sunLight);
+
+/* ================= SKY ================= */
+let sky = new THREE.Mesh(
+  new THREE.SphereGeometry(100,32,32),
+  new THREE.MeshBasicMaterial({color:0x87CEEB, side: THREE.BackSide})
+);
+scene.add(sky);
+
+/* ================= CLOUDS ================= */
+const cloudGeo = new THREE.SphereGeometry(1,12,12);
+const cloudMat = new THREE.MeshStandardMaterial({color:0xffffff,transparent:true,opacity:0.7});
+const clouds = [];
+for(let i=0;i<20;i++){
+  const cloud = new THREE.Mesh(cloudGeo,cloudMat);
+  cloud.position.set((Math.random()-0.5)*60, 10+Math.random()*10, -50-Math.random()*50);
+  cloud.scale.set(2+Math.random()*3,1+Math.random(),1+Math.random()*2);
+  scene.add(cloud);
+  clouds.push(cloud);
+}
+
+/* ================= ROAD TILES ================= */
 const roadWidth = 6;
 const roadLength = 50;
 const roadTiles = [];
 function createRoadTile(z){
-  const geo = new THREE.PlaneGeometry(roadWidth, roadLength);
-  const mat = new THREE.MeshStandardMaterial({color:0x8B4513}); // brown
-  const tile = new THREE.Mesh(geo, mat);
-  tile.rotation.x = -Math.PI/2;
-  tile.position.z = z;
+  const geo = new THREE.PlaneGeometry(roadWidth,roadLength);
+  const mat = new THREE.MeshStandardMaterial({color:0x228B22}); // green ground
+  const tile = new THREE.Mesh(geo,mat);
+  tile.rotation.x=-Math.PI/2;
+  tile.position.z=z;
   scene.add(tile);
   roadTiles.push(tile);
 }
@@ -60,24 +79,23 @@ for(let i=0;i<4;i++) createRoadTile(-i*roadLength);
 
 /* ================= LANES ================= */
 const lanePositions = [-2,0,2];
-function createLaneLine(x){
-  const geo = new THREE.PlaneGeometry(0.1, 200);
+lanePositions.forEach(x=>{
+  const geo = new THREE.PlaneGeometry(0.1,200);
   const mat = new THREE.MeshBasicMaterial({color:0xffffff});
-  const line = new THREE.Mesh(geo, mat);
-  line.rotation.x = -Math.PI/2;
+  const line = new THREE.Mesh(geo,mat);
+  line.rotation.x=-Math.PI/2;
   line.position.set(x,0.01,-50);
   scene.add(line);
-}
-lanePositions.forEach(x=>createLaneLine(x));
+});
 
 /* ================= PLAYER CAR ================= */
 let playerLane = 1;
-const input = {left:false, right:false};
+const input = {left:false,right:false};
 let car;
 
 const loader = new THREE.GLTFLoader();
 loader.load(
-  'https://models.babylonjs.com/CesiumMilkTruck.glb', // public car model
+  'https://models.babylonjs.com/CesiumMilkTruck.glb',
   gltf=>{
     car = gltf.scene;
     car.scale.set(0.01,0.01,0.01);
@@ -86,12 +104,15 @@ loader.load(
   }
 );
 
-/* ================= OBSTACLES & COINS ================= */
-let obstacles = [];
-let coins = [];
-let score = 0;
-let gameSpeed = 0.3;
+/* ================= JUMP ================= */
+let isJumping = false;
+let velocityY = 0;
+const gravity=-0.02;
+const jumpStrength=0.5;
 
+/* ================= OBSTACLES & COINS ================= */
+let obstacles=[], coins=[], dustParticles=[];
+let score=0, gameSpeed=0.3;
 function spawnObstacle(){
   const lane = Math.floor(Math.random()*3);
   const geo = new THREE.BoxGeometry(1,0.5,2);
@@ -101,7 +122,6 @@ function spawnObstacle(){
   scene.add(obs);
   obstacles.push({mesh:obs,lane});
 }
-
 function spawnCoin(){
   const lane = Math.floor(Math.random()*3);
   const geo = new THREE.SphereGeometry(0.3,12,12);
@@ -116,6 +136,7 @@ function spawnCoin(){
 window.addEventListener("keydown",e=>{
   if(e.code==="ArrowLeft") input.left=true;
   if(e.code==="ArrowRight") input.right=true;
+  if(e.code==="Space" && !isJumping){ isJumping=true; velocityY=jumpStrength; }
 });
 let startX=null;
 window.addEventListener("touchstart",e=>startX=e.touches[0].clientX);
@@ -123,39 +144,58 @@ window.addEventListener("touchend",e=>{
   const dx = e.changedTouches[0].clientX-startX;
   if(dx>40) input.right=true;
   if(dx<-40) input.left=true;
+  if(Math.abs(dx)<10 && !isJumping){ isJumping=true; velocityY=jumpStrength; }
 });
 
 /* ================= GAME LOOP ================= */
+let timeOfDay = 0; // 0-1 = day-night
 function animate(){
   requestAnimationFrame(animate);
-  if(!car) { renderer.render(scene,camera); return; } // wait for car to load
+  if(!car){ renderer.render(scene,camera); return; }
 
-  // Handle lane switching
+  // Lane switching
   if(input.left){ playerLane=Math.max(0,playerLane-1); input.left=false; }
   if(input.right){ playerLane=Math.min(2,playerLane+1); input.right=false; }
-
-  // Smooth lane movement
   const targetX = lanePositions[playerLane];
   car.position.x += (targetX - car.position.x)*0.3;
 
-  // Move road tiles
+  // Jump physics
+  velocityY += gravity;
+  car.position.y += velocityY;
+  if(car.position.y<=0){ car.position.y=0; velocityY=0; isJumping=false; }
+
+  // Dust trail
+  const dustGeo = new THREE.SphereGeometry(0.05,6,6);
+  const dustMat = new THREE.MeshBasicMaterial({color:0xaaaaaa,transparent:true,opacity:0.5});
+  const p = new THREE.Mesh(dustGeo,dustMat);
+  p.position.set(car.position.x,0.1,car.position.z-1);
+  scene.add(p);
+  dustParticles.push(p);
+  dustParticles.forEach((d,i)=>{
+    d.position.z -= gameSpeed;
+    d.material.opacity -=0.02;
+    if(d.material.opacity<=0){ scene.remove(d); dustParticles.splice(i,1); }
+  });
+
+  // Road tiles
   roadTiles.forEach(tile=>{
     tile.position.z+=gameSpeed;
     if(tile.position.z>roadLength/2) tile.position.z-=roadLength*roadTiles.length;
   });
 
-  // Move obstacles
+  // Obstacles
   obstacles.forEach((o,i)=>{
     o.mesh.position.z+=gameSpeed;
     if(o.mesh.position.z>5){ scene.remove(o.mesh); obstacles.splice(i,1); }
     if(Math.abs(car.position.z-o.mesh.position.z)<1.5 &&
-       Math.abs(car.position.x-o.mesh.position.x)<1.2){
-         alert("Game Over! Score: "+score);
+       Math.abs(car.position.x-o.mesh.position.x)<1.2 &&
+       car.position.y<=0.25){
+         velocityY=0.3; alert("Crashed! Score: "+score);
          window.location.reload();
        }
   });
 
-  // Move coins
+  // Coins
   coins.forEach((c,i)=>{
     c.mesh.position.z+=gameSpeed;
     if(c.mesh.position.z>5){ scene.remove(c.mesh); coins.splice(i,1); }
@@ -167,6 +207,22 @@ function animate(){
          coins.splice(i,1);
        }
   });
+
+  // Camera follow
+  camera.position.x += (car.position.x - camera.position.x)*0.05;
+  camera.lookAt(car.position.x, car.position.y + 2, car.position.z);
+
+  // Clouds
+  clouds.forEach(c=>c.position.x += 0.01);
+
+  // Day-night cycle
+  timeOfDay += 0.0002; if(timeOfDay>1) timeOfDay=0;
+  const skyColor = new THREE.Color().lerpColors(new THREE.Color(0x001848), new THREE.Color(0x87CEEB), Math.sin(timeOfDay*Math.PI));
+  sky.material.color.copy(skyColor);
+  ambientLight.intensity = 0.4 + 0.6*Math.sin(timeOfDay*Math.PI);
+  sunLight.intensity = 0.3 + 0.7*Math.sin(timeOfDay*Math.PI);
+  sunLight.position.y = 20*Math.sin(timeOfDay*Math.PI);
+  sunLight.position.x = 20*Math.cos(timeOfDay*Math.PI);
 
   gameSpeed += 0.00005;
 
@@ -188,4 +244,4 @@ window.addEventListener("resize",()=>{
 
 </script>
 </body>
-  </html>
+</html>￼Enter
