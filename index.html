@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>3D Runner - Session 8.1</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #87CEEB; }
+  #score {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    font-size: 24px;
+    color: #fff;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+
+<div id="score">Score: 0</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+
+/* ================= SCENE & FOG ================= */
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x111111, 10, 60);
+
+/* ================= CAMERA ================= */
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 100);
+camera.position.set(0,5,10);
+camera.lookAt(0,0,0);
+
+/* ================= RENDERER ================= */
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+/* ================= LIGHTS ================= */
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+const dirLight = new THREE.DirectionalLight(0xffffff,0.6);
+dirLight.position.set(5,10,5);
+scene.add(dirLight);
+
+/* ================= ROAD ================= */
+const roadWidth = 6;
+const roadLength = 50;
+const roadTiles = [];
+function createRoadTile(z){
+  const geo = new THREE.PlaneGeometry(roadWidth, roadLength);
+  const mat = new THREE.MeshStandardMaterial({color:0x8B4513}); // brown
+  const tile = new THREE.Mesh(geo, mat);
+  tile.rotation.x = -Math.PI/2;
+  tile.position.z = z;
+  scene.add(tile);
+  roadTiles.push(tile);
+}
+for(let i=0;i<4;i++) createRoadTile(-i*roadLength);
+
+/* ================= LANES ================= */
+const lanePositions = [-2,0,2];
+function createLaneLine(x){
+  const geo = new THREE.PlaneGeometry(0.1, 200);
+  const mat = new THREE.MeshBasicMaterial({color:0xffffff});
+  const line = new THREE.Mesh(geo, mat);
+  line.rotation.x = -Math.PI/2;
+  line.position.set(x,0.01,-50);
+  scene.add(line);
+}
+lanePositions.forEach(x=>createLaneLine(x));
+
+/* ================= PLAYER CAR ================= */
+let playerLane = 1;
+const input = {left:false, right:false};
+let car;
+
+const loader = new THREE.GLTFLoader();
+loader.load(
+  'https://models.babylonjs.com/CesiumMilkTruck.glb', // public car model
+  gltf=>{
+    car = gltf.scene;
+    car.scale.set(0.01,0.01,0.01);
+    car.position.set(0,0,2);
+    scene.add(car);
+  }
+);
+
+/* ================= OBSTACLES & COINS ================= */
+let obstacles = [];
+let coins = [];
+let score = 0;
+let gameSpeed = 0.3;
+
+function spawnObstacle(){
+  const lane = Math.floor(Math.random()*3);
+  const geo = new THREE.BoxGeometry(1,0.5,2);
+  const mat = new THREE.MeshStandardMaterial({color:0xff0000});
+  const obs = new THREE.Mesh(geo,mat);
+  obs.position.set(lanePositions[lane],0.25,-60);
+  scene.add(obs);
+  obstacles.push({mesh:obs,lane});
+}
+
+function spawnCoin(){
+  const lane = Math.floor(Math.random()*3);
+  const geo = new THREE.SphereGeometry(0.3,12,12);
+  const mat = new THREE.MeshStandardMaterial({color:0xffff00});
+  const coin = new THREE.Mesh(geo,mat);
+  coin.position.set(lanePositions[lane],0.25,-60);
+  scene.add(coin);
+  coins.push({mesh:coin,lane});
+}
+
+/* ================= INPUT ================= */
+window.addEventListener("keydown",e=>{
+  if(e.code==="ArrowLeft") input.left=true;
+  if(e.code==="ArrowRight") input.right=true;
+});
+let startX=null;
+window.addEventListener("touchstart",e=>startX=e.touches[0].clientX);
+window.addEventListener("touchend",e=>{
+  const dx = e.changedTouches[0].clientX-startX;
+  if(dx>40) input.right=true;
+  if(dx<-40) input.left=true;
+});
+
+/* ================= GAME LOOP ================= */
+function animate(){
+  requestAnimationFrame(animate);
+  if(!car) { renderer.render(scene,camera); return; } // wait for car to load
+
+  // Handle lane switching
+  if(input.left){ playerLane=Math.max(0,playerLane-1); input.left=false; }
+  if(input.right){ playerLane=Math.min(2,playerLane+1); input.right=false; }
+
+  // Smooth lane movement
+  const targetX = lanePositions[playerLane];
+  car.position.x += (targetX - car.position.x)*0.3;
+
+  // Move road tiles
+  roadTiles.forEach(tile=>{
+    tile.position.z+=gameSpeed;
+    if(tile.position.z>roadLength/2) tile.position.z-=roadLength*roadTiles.length;
+  });
+
+  // Move obstacles
+  obstacles.forEach((o,i)=>{
+    o.mesh.position.z+=gameSpeed;
+    if(o.mesh.position.z>5){ scene.remove(o.mesh); obstacles.splice(i,1); }
+    if(Math.abs(car.position.z-o.mesh.position.z)<1.5 &&
+       Math.abs(car.position.x-o.mesh.position.x)<1.2){
+         alert("Game Over! Score: "+score);
+         window.location.reload();
+       }
+  });
+
+  // Move coins
+  coins.forEach((c,i)=>{
+    c.mesh.position.z+=gameSpeed;
+    if(c.mesh.position.z>5){ scene.remove(c.mesh); coins.splice(i,1); }
+    if(Math.abs(car.position.z-c.mesh.position.z)<1.5 &&
+       Math.abs(car.position.x-c.mesh.position.x)<1.2){
+         score+=10;
+         document.getElementById("score").innerText="Score: "+score;
+         scene.remove(c.mesh);
+         coins.splice(i,1);
+       }
+  });
+
+  gameSpeed += 0.00005;
+
+  renderer.render(scene,camera);
+}
+
+animate();
+
+/* ================= SPAWN INTERVALS ================= */
+setInterval(spawnObstacle,1500);
+setInterval(spawnCoin,1000);
+
+/* ================= RESIZE ================= */
+window.addEventListener("resize",()=>{
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+});
+
+</script>
+</body>
+  </html>
