@@ -1,247 +1,536 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>3D Runner - Session 12</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Mini Asphalt Nitro — Upgraded Edition 🚀</title>
 <style>
-  body { margin: 0; overflow: hidden; }
-  #score {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    font-size: 24px;
-    color: #fff;
-    z-index: 10;
+  :root{
+    --bg:#000011;
+    --neon-cyan:#00f7ff;
+    --neon-pink:#ff4dff;
+    --panel: rgba(0,0,0,0.5);
   }
+  html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,Arial,system-ui;color:#cfe;overflow:hidden}
+  canvas{display:block}
+
+  /* HUD */
+  #hud{position:fixed;left:12px;top:12px;z-index:60}
+  .hud-line{font-weight:700;color:var(--neon-cyan);text-shadow:0 6px 18px rgba(0,0,0,0.7);margin:6px 0}
+  #meters{position:fixed;left:12px;bottom:22px;z-index:60;display:flex;gap:10px}
+  .meter{background:var(--panel);padding:6px;border-radius:8px;width:150px;height:12px;overflow:hidden}
+  .fill{height:100%;transform-origin:left;border-radius:4px;background:linear-gradient(90deg,var(--neon-cyan),var(--neon-pink))}
+
+  /* Nitro button */
+  #nitroBtn{position:fixed;right:12px;bottom:92px;width:62px;height:62px;border-radius:12px;background:linear-gradient(180deg,#ff4d4d,#a30000);color:#fff;display:flex;align-items:center;justify-content:center;font-size:26px;z-index:60}
+
+  /* Landing overlay */
+  #overlay{position:fixed;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.6),rgba(0,0,0,0.8));display:flex;align-items:center;justify-content:center;z-index:120}
+  #panel{width:92%;max-width:720px;padding:20px;border-radius:12px;background:rgba(6,6,12,0.6);box-shadow:0 10px 40px rgba(0,0,0,0.6);text-align:center}
+  #panel h1{color:var(--neon-pink);margin:6px 0}
+  .hubbtn{display:inline-block;margin:12px;padding:12px 20px;border-radius:12px;background:var(--panel);color:var(--neon-cyan);cursor:pointer}
+
+  /* Leaderboard */
+  #results{position:fixed;inset:10% 6%;background:rgba(0,0,0,0.8);z-index:130;border-radius:12px;padding:18px;color:#cfe;display:none}
+
+  /* garage/store placeholder */
+  #garageUI, #storeUI{position:fixed;right:12px;top:12px;background:var(--panel);padding:10px;border-radius:10px;color:var(--neon-cyan);z-index:60}
 </style>
 </head>
 <body>
 
-<div id="score">Score: 0</div>
+<div id="hud">
+  <div class="hud-line">Score: <span id="score">0</span></div>
+  <div class="hud-line">Distance: <span id="distance">0</span> m</div>
+</div>
+
+<div id="meters">
+  <div class="meter" title="Throttle"><div id="throttle" class="fill" style="transform:scaleX(0)"></div></div>
+  <div class="meter" title="Nitro"><div id="nitroFill" class="fill" style="transform:scaleX(1)"></div></div>
+</div>
+
+<div id="nitroBtn">⚡</div>
+<div id="garageUI">🔧 Garage</div>
+<div id="storeUI" style="top:86px;">🛒 Store</div>
+
+<!-- Landing / start overlay -->
+<div id="overlay">
+  <div id="panel">
+    <h1>Mini Asphalt Nitro — Ultimate</h1>
+    <p style="color:#9bf">Touch & hold to accelerate. Drag left/right to steer. Tap ⚡ for nitro.</p>
+    <div style="margin-top:12px;">
+      <button id="playBtn" class="hubbtn">▶ Play</button>
+      <button id="openGarage" class="hubbtn">Garage</button>
+      <button id="openStore" class="hubbtn">Store</button>
+    </div>
+    <p style="font-size:12px;color:#9bf;margin-top:10px">Gems are earned per race and used in the store (no ads).</p>
+  </div>
+</div>
+
+<!-- Results -->
+<div id="results"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script>
-
 <script>
-/* ================= SCENE & CAMERA ================= */
+/* =================== Setup scene =================== */
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0x111111, 10, 60);
+scene.fog = new THREE.Fog(0x001020, 20, 7000);
 
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 200);
-camera.position.set(0,5,10);
-
-/* ================= RENDERER ================= */
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(window.innerWidth, window.innerHeight);
+/* Camera & renderer */
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 10000);
+camera.position.set(0, 6, 22);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-/* ================= LIGHTS ================= */
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
-scene.add(ambientLight);
+/* Lights */
+const ambient = new THREE.AmbientLight(0x667788, 0.9);
+scene.add(ambient);
+const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+sun.position.set(80, 180, -120);
+scene.add(sun);
 
-const sunLight = new THREE.DirectionalLight(0xffffff,0.8);
-sunLight.position.set(0,20,0);
-scene.add(sunLight);
-
-/* ================= SKY ================= */
-let sky = new THREE.Mesh(
-  new THREE.SphereGeometry(100,32,32),
-  new THREE.MeshBasicMaterial({color:0x87CEEB, side: THREE.BackSide})
-);
+/* Sky + moon */
+const sky = new THREE.Mesh(new THREE.SphereGeometry(3000, 32, 16), new THREE.MeshBasicMaterial({ color: 0x001b2b, side: THREE.BackSide }));
 scene.add(sky);
+const moon = new THREE.Mesh(new THREE.SphereGeometry(24, 24, 16), new THREE.MeshStandardMaterial({ color: 0xffffee, emissive: 0xffffc8, emissiveIntensity: 0.6 }));
+moon.position.set(-200, 240, -800);
+scene.add(moon);
 
-/* ================= CLOUDS ================= */
-const cloudGeo = new THREE.SphereGeometry(1,12,12);
-const cloudMat = new THREE.MeshStandardMaterial({color:0xffffff,transparent:true,opacity:0.7});
-const clouds = [];
-for(let i=0;i<20;i++){
-  const cloud = new THREE.Mesh(cloudGeo,cloudMat);
-  cloud.position.set((Math.random()-0.5)*60, 10+Math.random()*10, -50-Math.random()*50);
-  cloud.scale.set(2+Math.random()*3,1+Math.random(),1+Math.random()*2);
-  scene.add(cloud);
-  clouds.push(cloud);
-}
-
-/* ================= ROAD TILES ================= */
-const roadWidth = 6;
-const roadLength = 50;
-const roadTiles = [];
-function createRoadTile(z){
-  const geo = new THREE.PlaneGeometry(roadWidth,roadLength);
-  const mat = new THREE.MeshStandardMaterial({color:0x228B22}); // green ground
-  const tile = new THREE.Mesh(geo,mat);
-  tile.rotation.x=-Math.PI/2;
-  tile.position.z=z;
-  scene.add(tile);
-  roadTiles.push(tile);
-}
-for(let i=0;i<4;i++) createRoadTile(-i*roadLength);
-
-/* ================= LANES ================= */
-const lanePositions = [-2,0,2];
-lanePositions.forEach(x=>{
-  const geo = new THREE.PlaneGeometry(0.1,200);
-  const mat = new THREE.MeshBasicMaterial({color:0xffffff});
-  const line = new THREE.Mesh(geo,mat);
-  line.rotation.x=-Math.PI/2;
-  line.position.set(x,0.01,-50);
-  scene.add(line);
-});
-
-/* ================= PLAYER CAR ================= */
-let playerLane = 1;
-const input = {left:false,right:false};
-let car;
-
-const loader = new THREE.GLTFLoader();
-loader.load(
-  'https://models.babylonjs.com/CesiumMilkTruck.glb',
-  gltf=>{
-    car = gltf.scene;
-    car.scale.set(0.01,0.01,0.01);
-    car.position.set(0,0,2);
-    scene.add(car);
-  }
+/* Ground (outside track) */
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(10000, 10000),
+  new THREE.MeshStandardMaterial({ color: 0x0b1b12, roughness: 1 })
 );
+ground.rotation.x = -Math.PI / 2; ground.position.y = -0.2;
+scene.add(ground);
 
-/* ================= JUMP ================= */
-let isJumping = false;
-let velocityY = 0;
-const gravity=-0.02;
-const jumpStrength=0.5;
+/* Road (visual plane; world objects are placed along z and moved toward player) */
+const roadWidth = 36, roadLength = 5000;
+const roadMat = new THREE.MeshStandardMaterial({ color: 0x5b1f6a, roughness: 0.95 });
+const road = new THREE.Mesh(new THREE.PlaneGeometry(roadWidth, roadLength), roadMat);
+road.rotation.x = -Math.PI / 2; road.position.z = -roadLength/2 + 100;
+scene.add(road);
 
-/* ================= OBSTACLES & COINS ================= */
-let obstacles=[], coins=[], dustParticles=[];
-let score=0, gameSpeed=0.3;
-function spawnObstacle(){
-  const lane = Math.floor(Math.random()*3);
-  const geo = new THREE.BoxGeometry(1,0.5,2);
-  const mat = new THREE.MeshStandardMaterial({color:0xff0000});
-  const obs = new THREE.Mesh(geo,mat);
-  obs.position.set(lanePositions[lane],0.25,-60);
-  scene.add(obs);
-  obstacles.push({mesh:obs,lane});
+/* lane dashes */
+const laneLines = [];
+for (let z = -10; z > -roadLength; z -= 8) {
+  const seg = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 6), new THREE.MeshBasicMaterial({ color: 0x00f7ff }));
+  seg.rotation.x = -Math.PI / 2; seg.position.set(0, 0.02, z); scene.add(seg); laneLines.push(seg);
 }
-function spawnCoin(){
-  const lane = Math.floor(Math.random()*3);
-  const geo = new THREE.SphereGeometry(0.3,12,12);
-  const mat = new THREE.MeshStandardMaterial({color:0xffff00});
-  const coin = new THREE.Mesh(geo,mat);
-  coin.position.set(lanePositions[lane],0.25,-60);
-  scene.add(coin);
-  coins.push({mesh:coin,lane});
+/* side neon strips */
+for (let side of [-1, 1]) {
+  for (let z = -10; z > -roadLength; z -= 14) {
+    const seg = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 10), new THREE.MeshBasicMaterial({ color: 0xff4dff }));
+    seg.rotation.x = -Math.PI / 2; seg.position.set(side * (roadWidth / 2 - 1.2), 0.02, z); scene.add(seg);
+  }
 }
 
-/* ================= INPUT ================= */
-window.addEventListener("keydown",e=>{
-  if(e.code==="ArrowLeft") input.left=true;
-  if(e.code==="ArrowRight") input.right=true;
-  if(e.code==="Space" && !isJumping){ isJumping=true; velocityY=jumpStrength; }
+/* neon boundaries */
+const leftBoundary = new THREE.Mesh(new THREE.PlaneGeometry(6, roadLength), new THREE.MeshStandardMaterial({ color: 0x00f7ff, emissive: 0x00f7ff, emissiveIntensity: 0.5, transparent: true, opacity: 0.12 }));
+leftBoundary.rotation.y = Math.PI / 2; leftBoundary.position.set(-roadWidth / 2 - 3, 3, -roadLength / 2 + 100); scene.add(leftBoundary);
+const rightBoundary = leftBoundary.clone(); rightBoundary.rotation.y = -Math.PI / 2; rightBoundary.position.x = roadWidth / 2 + 3; scene.add(rightBoundary);
+
+/* =================== Buildings & windows =================== */
+const buildings = [], trees = [], streetLights = [];
+function addBuilding(x, z, w, h, d, col) {
+  const mat = new THREE.MeshStandardMaterial({ color: col || 0x223366, emissive: 0x114477, emissiveIntensity: 0.2 });
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, h / 2, z); scene.add(m); buildings.push(m);
+
+  // add a grid of glowing windows (planes)
+  const cols = Math.max(1, Math.floor(w / 2));
+  const rows = Math.max(1, Math.floor(h / 3));
+  for (let i = 0; i < cols; i++) {
+    for (let j = 0; j < rows; j++) {
+      if (Math.random() < 0.5) continue;
+      const win = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.2, h * 0.12), new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0xffff66, emissiveIntensity: Math.random() * 0.6, side: THREE.FrontSide }));
+      win.position.set((i / cols - 0.5) * w * 0.6, (j / rows - 0.3) * h * 0.8, d / 2 + 0.06);
+      m.add(win);
+    }
+  }
+}
+for (let side of [-1, 1]) {
+  for (let i = 0; i < 12; i++) {
+    addBuilding(side * (roadWidth / 2 + 160 + Math.random() * 250), -(i * 300 + Math.random() * 150), 40 + Math.random() * 80, 80 + Math.random() * 200, 40 + Math.random() * 80);
+  }
+}
+function addTree(x, z, scale = 1) {
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.5 * scale, 0.5 * scale, 2 * scale, 6), new THREE.MeshStandardMaterial({ color: 0x5c3b20 }));
+  const leaves = new THREE.Mesh(new THREE.ConeGeometry(1.8 * scale, 5 * scale, 8), new THREE.MeshStandardMaterial({ color: 0x00ff88, emissive: 0x00ff88, emissiveIntensity: 0.12 }));
+  trunk.position.set(x, 1 * scale, z); leaves.position.set(x, 3 * scale, z); scene.add(trunk); scene.add(leaves); trees.push(trunk); trees.push(leaves);
+}
+for (let side of [-1, 1]) for (let i = 0; i < 60; i++) if (Math.random() < 0.64) addTree(side * (roadWidth / 2 + 60 + Math.random() * 260), -(i * 160 + Math.random() * 120), 0.6 + Math.random() * 1.4);
+
+/* street lights */
+for (let side of [-1, 1]) {
+  for (let z = -10; z > -3000; z -= 40) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 6, 6), new THREE.MeshStandardMaterial({ color: 0xaaaaaa }));
+    pole.position.set(side * (roadWidth / 2 + 8), 3, z);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), new THREE.MeshStandardMaterial({ color: 0xffffaa, emissive: 0xffffaa, emissiveIntensity: 0.6 }));
+    bulb.position.set(0, 2.4, 0); pole.add(bulb);
+    scene.add(pole); streetLights.push(pole);
+  }
+}
+
+/* =================== Player car (with roof & window glow) =================== */
+const player = new THREE.Group();
+const carBodyMat = new THREE.MeshStandardMaterial({ color: 0x2299ff, metalness: 0.25, roughness: 0.25, emissive: 0x003366, emissiveIntensity: 0.25 });
+const carBody = new THREE.Mesh(new THREE.BoxGeometry(3, 1.1, 5), carBodyMat); carBody.position.y = 1.2; player.add(carBody);
+const carTop = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 2.2), new THREE.MeshStandardMaterial({ color: 0x1155cc, metalness: 0.3, emissive: 0x0033aa, emissiveIntensity: 0.15 })); carTop.position.set(0, 1.8, -0.3); player.add(carTop);
+// windows
+const winMat = new THREE.MeshStandardMaterial({ color: 0x88ccee, emissive: 0x88ccff, emissiveIntensity: 0.45, transparent: true, opacity: 0.95 });
+const windshield = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.6), winMat); windshield.position.set(0, 1.6, 1.4); player.add(windshield);
+// wheels
+const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+[[-1.05, 0.55, 1.9], [1.05, 0.55, 1.9], [-1.05, 0.55, -1.9], [1.05, 0.55, -1.9]].forEach(p => {
+  const w = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.45, 14), wheelMat); w.rotation.z = Math.PI / 2; w.position.set(...p); player.add(w);
 });
-let startX=null;
-window.addEventListener("touchstart",e=>startX=e.touches[0].clientX);
-window.addEventListener("touchend",e=>{
-  const dx = e.changedTouches[0].clientX-startX;
-  if(dx>40) input.right=true;
-  if(dx<-40) input.left=true;
-  if(Math.abs(dx)<10 && !isJumping){ isJumping=true; velocityY=jumpStrength; }
-});
+// lights
+const leftHead = new THREE.SpotLight(0xfff4d0, 1.6, 120, Math.PI / 9); leftHead.position.set(-0.8, 1.5, 2.8); player.add(leftHead); player.add(leftHead.target);
+const rightHead = new THREE.SpotLight(0xfff4d0, 1.6, 120, Math.PI / 9); rightHead.position.set(0.8, 1.5, 2.8); player.add(rightHead); player.add(rightHead.target);
+const tailL = new THREE.PointLight(0xff2244, 0.6, 20); tailL.position.set(-0.9, 0.5, -2.8); player.add(tailL);
+const tailR = tailL.clone(); tailR.position.x = 0.9; player.add(tailR);
 
-/* ================= GAME LOOP ================= */
-let timeOfDay = 0; // 0-1 = day-night
-function animate(){
-  requestAnimationFrame(animate);
-  if(!car){ renderer.render(scene,camera); return; }
+player.position.set(0, 0.12, 8); scene.add(player);
 
-  // Lane switching
-  if(input.left){ playerLane=Math.max(0,playerLane-1); input.left=false; }
-  if(input.right){ playerLane=Math.min(2,playerLane+1); input.right=false; }
-  const targetX = lanePositions[playerLane];
-  car.position.x += (targetX - car.position.x)*0.3;
-
-  // Jump physics
-  velocityY += gravity;
-  car.position.y += velocityY;
-  if(car.position.y<=0){ car.position.y=0; velocityY=0; isJumping=false; }
-
-  // Dust trail
-  const dustGeo = new THREE.SphereGeometry(0.05,6,6);
-  const dustMat = new THREE.MeshBasicMaterial({color:0xaaaaaa,transparent:true,opacity:0.5});
-  const p = new THREE.Mesh(dustGeo,dustMat);
-  p.position.set(car.position.x,0.1,car.position.z-1);
-  scene.add(p);
-  dustParticles.push(p);
-  dustParticles.forEach((d,i)=>{
-    d.position.z -= gameSpeed;
-    d.material.opacity -=0.02;
-    if(d.material.opacity<=0){ scene.remove(d); dustParticles.splice(i,1); }
+/* =================== AI cars (unique meshes) =================== */
+const aiCars = [];
+function createAICar(color, x, z) {
+  const g = new THREE.Group();
+  const b = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1, 4.2), new THREE.MeshStandardMaterial({ color, metalness: 0.2, roughness: 0.3 }));
+  b.position.y = 0.9; g.add(b);
+  const top = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.45, 1.8), new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.06 }));
+  top.position.y = 1.45; top.position.z = -0.2; g.add(top);
+  // wheels
+  [[-0.85, 0.4, 1.6], [0.85, 0.4, 1.6], [-0.85, 0.4, -1.6], [0.85, 0.4, -1.6]].forEach(p => {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.28, 12), wheelMat); w.rotation.z = Math.PI / 2; w.position.set(...p); g.add(w);
   });
+  g.position.set(x, 0.12, z);
+  scene.add(g);
+  return g;
+}
+aiCars.push(createAICar(0xff4444, -4, -30));
+aiCars.push(createAICar(0x44ff44, 4, -70));
+aiCars.push(createAICar(0xffff44, 0, -120));
 
-  // Road tiles
-  roadTiles.forEach(tile=>{
-    tile.position.z+=gameSpeed;
-    if(tile.position.z>roadLength/2) tile.position.z-=roadLength*roadTiles.length;
-  });
-
-  // Obstacles
-  obstacles.forEach((o,i)=>{
-    o.mesh.position.z+=gameSpeed;
-    if(o.mesh.position.z>5){ scene.remove(o.mesh); obstacles.splice(i,1); }
-    if(Math.abs(car.position.z-o.mesh.position.z)<1.5 &&
-       Math.abs(car.position.x-o.mesh.position.x)<1.2 &&
-       car.position.y<=0.25){
-         velocityY=0.3; alert("Crashed! Score: "+score);
-         window.location.reload();
-       }
-  });
-
-  // Coins
-  coins.forEach((c,i)=>{
-    c.mesh.position.z+=gameSpeed;
-    if(c.mesh.position.z>5){ scene.remove(c.mesh); coins.splice(i,1); }
-    if(Math.abs(car.position.z-c.mesh.position.z)<1.5 &&
-       Math.abs(car.position.x-c.mesh.position.x)<1.2){
-         score+=10;
-         document.getElementById("score").innerText="Score: "+score;
-         scene.remove(c.mesh);
-         coins.splice(i,1);
-       }
-  });
-
-  // Camera follow
-  camera.position.x += (car.position.x - camera.position.x)*0.05;
-  camera.lookAt(car.position.x, car.position.y + 2, car.position.z);
-
-  // Clouds
-  clouds.forEach(c=>c.position.x += 0.01);
-
-  // Day-night cycle
-  timeOfDay += 0.0002; if(timeOfDay>1) timeOfDay=0;
-  const skyColor = new THREE.Color().lerpColors(new THREE.Color(0x001848), new THREE.Color(0x87CEEB), Math.sin(timeOfDay*Math.PI));
-  sky.material.color.copy(skyColor);
-  ambientLight.intensity = 0.4 + 0.6*Math.sin(timeOfDay*Math.PI);
-  sunLight.intensity = 0.3 + 0.7*Math.sin(timeOfDay*Math.PI);
-  sunLight.position.y = 20*Math.sin(timeOfDay*Math.PI);
-  sunLight.position.x = 20*Math.cos(timeOfDay*Math.PI);
-
-  gameSpeed += 0.00005;
-
-  renderer.render(scene,camera);
+/* =================== Obstacles: spiky cylinders =================== */
+const obstacles = [];
+function createSpikyCylinder(x, z, radius = 0.9, height = 2.2) {
+  const cyl = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 16), new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.9, roughness: 0.15, emissive: 0x002b2b, emissiveIntensity: 0.05 }));
+  cyl.position.set(x, height / 2, z);
+  // create cones around circumference
+  const cones = new THREE.Group();
+  const conesCount = 12;
+  for (let i = 0; i < conesCount; i++) {
+    const ang = (i / conesCount) * Math.PI * 2;
+    const cx = Math.cos(ang) * (radius + 0.05);
+    const cz = Math.sin(ang) * (radius + 0.05);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.6, 8), new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8 }));
+    cone.position.set(cx, height / 2 + 0.2, cz);
+    cone.rotation.y = -ang;
+    cones.add(cone);
+  }
+  cyl.add(cones);
+  scene.add(cyl);
+  obstacles.push(cyl);
+}
+for (let i = 0; i < 10; i++) {
+  createSpikyCylinder((Math.random() * 24) - 12, -50 - Math.random() * 1200);
 }
 
-animate();
+/* =================== Gems (collectibles) =================== */
+const gems = [];
+function spawnGem(x, z) {
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 0), new THREE.MeshStandardMaterial({ color: 0x00f7ff, emissive: 0x00f7ff, emissiveIntensity: 0.9 }));
+  gem.position.set(x, 0.9, z);
+  scene.add(gem); gems.push(gem);
+}
+for (let i = 0; i < 40; i++) spawnGem((Math.random() * 20) - 10, -80 - i * 80 - Math.random() * 40);
 
-/* ================= SPAWN INTERVALS ================= */
-setInterval(spawnObstacle,1500);
-setInterval(spawnCoin,1000);
+/* =================== Finish distance =================== */
+const finishDistance = 3000; // meters to finish
+let distance = 0;
+let score = 0;
+let gemsCount = 0;
 
-/* ================= RESIZE ================= */
-window.addEventListener("resize",()=>{
-  camera.aspect=window.innerWidth/window.innerHeight;
+/* =================== Controls & input =================== */
+const input = { accel: false, left: false, right: false, boost: false };
+let touchActive = false, touchStartX = 0;
+let targetX = 0;
+
+function startInputBindings() {
+  // pointer to handle both mouse and touch
+  window.addEventListener('pointerdown', e => {
+    // if overlay open ignore
+    if (overlayOpen) return;
+    touchActive = true; input.accel = true;
+    touchStartX = e.clientX;
+    // lock pointer for better drag? optional
+  });
+  window.addEventListener('pointermove', e => {
+    if (!touchActive) return;
+    const dx = e.clientX - touchStartX;
+    // scale to lane range
+    targetX = dx * 0.04;
+  });
+  window.addEventListener('pointerup', e => {
+    touchActive = false; input.accel = false;
+    // when release, car should decelerate (we handle in loop)
+    targetX = 0;
+  });
+
+  // nitro button
+  document.getElementById('nitroBtn').addEventListener('pointerdown', () => { input.boost = true; });
+  document.getElementById('nitroBtn').addEventListener('pointerup', () => { input.boost = false; });
+}
+startInputBindings();
+
+/* =================== Audio placeholders (optional) =================== */
+/* Omitted for brevity - you can add WebAudio engine sound like earlier */
+
+/* =================== Explosion visual (cheap) =================== */
+function explodeAt(pos) {
+  const count = 14;
+  for (let i = 0; i < count; i++) {
+    const p = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), new THREE.MeshBasicMaterial({ color: 0xffcc66 }));
+    p.position.copy(pos);
+    p.userData = { vx: (Math.random() - 0.5) * 6, vy: Math.random() * 3 + 1, vz: (Math.random() - 0.5) * 6, life: 0.8 + Math.random() * 0.6 };
+    scene.add(p);
+    particles.push(p);
+  }
+}
+/* small particles array */
+const particles = [];
+
+/* =================== State for race =================== */
+let running = false;
+let overlayOpen = true;
+let playerForwardVel = 0; // units per second
+const baseAccel = 0.8; // accel units
+const baseFriction = 0.6;
+const maxSpeedUnits = 45; // base mph-ish unit
+let nitroAmount = 1.0;
+let nitroActive = false;
+let collisionCooldown = false;
+let collisionRecover = 0;
+
+/* HUD elements refs */
+const scoreEl = document.getElementById('score');
+const distanceEl = document.getElementById('distance');
+const throttleEl = document.getElementById('throttle');
+const nitroFillEl = document.getElementById('nitroFill');
+const overlay = document.getElementById('overlay');
+const resultsPanel = document.getElementById('results');
+
+/* Overlay buttons */
+document.getElementById('playBtn').addEventListener('click', () => {
+  overlay.style.display = 'none'; overlayOpen = false; running = true;
+  // unpause / start race
+});
+document.getElementById('openGarage').addEventListener('click', ()=> alert('Garage (placeholder)'));
+document.getElementById('openStore').addEventListener('click', ()=> alert('Store (placeholder)'));
+
+/* =================== Utility functions =================== */
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+/* =================== Main animation loop =================== */
+let last = performance.now();
+let animId = null;
+
+function loop(now) {
+  animId = requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  // Input -> acceleration & nitro
+  if (running) {
+    if (input.accel) {
+      playerForwardVel += baseAccel * 60 * dt;
+    } else {
+      playerForwardVel -= baseFriction * 40 * dt;
+    }
+
+    // nitro handling
+    if (input.boost && nitroAmount > 0.02) {
+      nitroActive = true;
+      nitroAmount = clamp(nitroAmount - dt * 0.35, 0, 1);
+    } else {
+      nitroActive = false;
+      nitroAmount = clamp(nitroAmount + dt * 0.08, 0, 1);
+    }
+  } else {
+    // not running -> very slow
+    playerForwardVel = Math.max(0, playerForwardVel - baseFriction * 40 * dt);
+  }
+
+  // speed cap
+  const top = (nitroActive ? maxSpeedUnits * 1.9 : maxSpeedUnits);
+  playerForwardVel = clamp(playerForwardVel, 0, top);
+
+  // lateral movement: lerp towards targetX
+  player.position.x += (targetX - player.position.x) * 0.12;
+  player.position.x = clamp(player.position.x, -(roadWidth / 2 - 2.2), (roadWidth / 2 - 2.2));
+
+  // worldMove simulates forward motion
+  const worldMove = playerForwardVel * (nitroActive ? 1.1 : 1.0) * dt;
+
+  // move road lines
+  for (const l of laneLines) {
+    l.position.z += worldMove;
+    if (l.position.z > 60) l.position.z -= roadLength;
+  }
+  // boundaries
+  leftBoundary.position.z += worldMove; if (leftBoundary.position.z > 400) leftBoundary.position.z -= roadLength;
+  rightBoundary.position.z += worldMove; if (rightBoundary.position.z > 400) rightBoundary.position.z -= roadLength;
+
+  // move buildings, trees, streetlights (parallax)
+  for (const b of buildings) {
+    b.position.z += worldMove * 0.18;
+    if (b.position.z > 300) b.position.z -= Math.ceil((b.position.z) / roadLength) * roadLength;
+  }
+  for (const t of trees) {
+    t.position.z += worldMove * 0.24;
+    if (t.position.z > 300) t.position.z -= Math.ceil((t.position.z) / roadLength) * roadLength;
+  }
+  for (const s of streetLights) {
+    s.position.z += worldMove * 1.0;
+    // flicker
+    const bulb = s.children[0];
+    if (bulb) { bulb.material.emissiveIntensity = 0.5 + Math.sin(now * 0.002 + s.position.z) * 0.2; }
+    if (s.position.z > 300) s.position.z -= Math.ceil((s.position.z) / roadLength) * roadLength;
+  }
+
+  // move AI cars independently (they have their own simple behavior)
+  aiCars.forEach((ai, i) => {
+    // AI speed slightly higher than player to keep challenge
+    const aiBase = (maxSpeedUnits * 0.9) + i * 3;
+    ai.position.z += (aiBase * dt * 0.9) * (1 + (Math.sin(now * 0.0008 + i) * 0.02));
+    // gentle lateral sway
+    ai.position.x += Math.sin(now * 0.0012 + i * 2) * 0.01;
+    if (ai.position.z > 200) ai.position.z = -Math.random() * roadLength - 200;
+  });
+
+  // move obstacles & rotate spikes
+  for (const o of obstacles) {
+    o.position.z += worldMove;
+    o.rotation.y += 0.12;
+    if (o.position.z > 200) o.position.z -= Math.ceil((o.position.z) / roadLength) * roadLength;
+    // check collision (player approx at z ~ 8)
+    const dz = Math.abs(o.position.z - player.position.z - 0);
+    const dx = Math.abs(o.position.x - player.position.x);
+    if (dz < 3.2 && dx < 2.2 && !collisionCooldown) {
+      // collision!
+      explodeAt(new THREE.Vector3(player.position.x, player.position.y + 0.6, player.position.z));
+      collisionCooldown = true; collisionRecover = 1.6; // seconds
+      // immediate velocity drop
+      playerForwardVel *= 0.28;
+    }
+  }
+
+  // update collision cooldown timer
+  if (collisionCooldown) {
+    collisionRecover -= dt;
+    if (collisionRecover <= 0) collisionCooldown = false;
+  }
+
+  // gems move & collection
+  for (let i = gems.length - 1; i >= 0; i--) {
+    const g = gems[i];
+    g.position.z += worldMove;
+    if (g.position.z > 200) g.position.z -= Math.ceil((g.position.z) / roadLength) * roadLength;
+    if (player.position.distanceTo(g.position) < 1.2) {
+      gemsCount += 1; score += 15;
+      scoreEl.innerText = score;
+      // remove gem
+      scene.remove(g); gems.splice(i, 1);
+    }
+  }
+
+  // particles update (explosion)
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.position.x += p.userData.vx * dt;
+    p.position.y += p.userData.vy * dt;
+    p.position.z += p.userData.vz * dt;
+    p.userData.vy -= 9.8 * dt * 0.6;
+    p.userData.life -= dt;
+    p.material.opacity = Math.max(0, p.userData.life);
+    if (p.userData.life <= 0) { scene.remove(p); particles.splice(i, 1); }
+  }
+
+  // distance tracking
+  distance += worldMove * 0.6; // tuning: worldMove units -> meters
+  distanceEl.innerText = Math.floor(distance);
+
+  // HUD throttle & nitro fill
+  throttleEl.style.transform = `scaleX(${clamp(playerForwardVel / maxSpeedUnits, 0, 1)})`;
+  nitroFillEl.style.transform = `scaleX(${nitroAmount})`;
+
+  // camera follow with slight FOV change for speed effect
+  const targetFov = 60 + (playerForwardVel / maxSpeedUnits) * (nitroActive ? 22 : 10);
+  camera.fov += (targetFov - camera.fov) * 0.06;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth,window.innerHeight);
-});
+  const camTarget = new THREE.Vector3(player.position.x, player.position.y + 5, player.position.z + 18);
+  camera.position.lerp(camTarget, 0.08);
+  camera.lookAt(player.position.x, player.position.y + 1.1, player.position.z);
 
+  // update lights/glo intensities for car
+  carBodyMat.emissiveIntensity = 0.25 + (nitroActive ? 0.5 : 0) * 1.2;
+  tailL.intensity = nitroActive ? 1.8 : 0.6;
+  tailR.intensity = nitroActive ? 1.8 : 0.6;
+
+  // finish check
+  if (distance >= finishDistance && running) {
+    running = false;
+    showResults();
+    return;
+  }
+
+  renderer.render(scene, camera);
+}
+
+/* start loop */
+loop(performance.now());
+
+/* =================== Finish / leaderboard UI =================== */
+function showResults() {
+  // compute positions by comparing z of ai and playerDistance proxy
+  const ranks = [];
+  // create proxy z-like distance for player (we moved world, but player z is static; use distance as progress)
+  const playerProgress = distance;
+  ranks.push({ name: 'YOU', progress: playerProgress, reward: 150 });
+  aiCars.forEach((ai, idx) => {
+    // estimate AI progress by using its z position (lower z = further ahead in world coordinates)
+    const aiProgress = Math.abs(ai.position.z) + (Math.random() * 30); // small randomness
+    ranks.push({ name: 'AI ' + (idx + 1), progress: aiProgress, reward: [120, 80, 40][idx] || 10 });
+  });
+  ranks.sort((a, b) => b.progress - a.progress);
+
+  // show results panel
+  let html = `<h2 style="color:var(--neon-pink)">🏁 Race Results</h2><ol>`;
+  for (let i = 0; i < Math.min(5, ranks.length); i++) {
+    const r = ranks[i];
+    html += `<li style="margin:8px 0">${i + 1}. ${r.name} — 💎 ${r.reward}</li>`;
+    // apply rewards to player only if YOU in that position
+    if (r.name === 'YOU') {
+      score += r.reward;
+      document.getElementById('score').innerText = score;
+    }
+  }
+  html += `</ol><div style="margin-top:12px;"><button id="btnGarage" class="hubbtn">Open Garage</button> <button id="btnRestart" class="hubbtn">Restart</button></div>`;
+  resultsPanel.innerHTML = html; resultsPanel.style.display = 'block';
+
+  document.getElementById('btnGarage').addEventListener('click', () => alert('Garage (placeholder)'));
+  document.getElementById('btnRestart').addEventListener('click', () => location.reload());
+}
+
+/* =================== Resize handler =================== */
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
 </script>
 </body>
-</html>￼Enter
+    </html>
